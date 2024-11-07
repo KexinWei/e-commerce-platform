@@ -1,4 +1,3 @@
-
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -37,6 +36,7 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         productName TEXT NOT NULL,
         categoryId INTEGER,
+        price REAL,  -- 价格字段
         isFavorite INTEGER DEFAULT 0,
         FOREIGN KEY (categoryId) REFERENCES Category(id)
       );
@@ -52,15 +52,30 @@ class DatabaseHelper {
       );
     ''');
 
-    // Create indexes to improve search speed
+    // 建立索引来优化查询性能
     await db.execute('CREATE INDEX idx_product_name ON Product(productName);');
     await db.execute('CREATE INDEX idx_category_name ON Category(categoryName);');
 
-    // Insert dummy data
+    // 插入初始数据
     await _insertDummyData(db);
   }
 
-  // CRUD operations for Category
+  // 插入测试数据
+  Future<void> _insertDummyData(Database db) async {
+    int electronicsId = await db.insert('Category', {'categoryName': 'Electronics'});
+    int clothingId = await db.insert('Category', {'categoryName': 'Clothing'});
+
+    await db.insert('Product', {'productName': 'Laptop', 'categoryId': electronicsId, 'price': 999.99, 'isFavorite': 1});
+    await db.insert('Product', {'productName': 'Smartphone', 'categoryId': electronicsId, 'price': 499.99});
+    await db.insert('Product', {'productName': 'T-Shirt', 'categoryId': clothingId, 'price': 19.99});
+    await db.insert('Product', {'productName': 'Jeans', 'categoryId': clothingId, 'price': 49.99, 'isFavorite': 1});
+
+    await db.insert('Review', {'productId': 1, 'reviewText': 'Great performance!', 'rating': 5});
+    await db.insert('Review', {'productId': 1, 'reviewText': 'Good value for the price', 'rating': 4});
+    await db.insert('Review', {'productId': 2, 'reviewText': 'Battery life could be better', 'rating': 3});
+  }
+
+  // CRUD 操作 - Category
   Future<int> insertCategory(Map<String, dynamic> category) async {
     final db = await database;
     return await db.insert('Category', category);
@@ -71,19 +86,58 @@ class DatabaseHelper {
     return await db.query('Category');
   }
 
-  // CRUD operations for Product
+  // CRUD 操作 - Product
   Future<int> insertProduct(Map<String, dynamic> product) async {
     final db = await database;
     return await db.insert('Product', product);
   }
 
-  Future<List<Map<String, dynamic>>> getProducts({String? query}) async {
+  Future<List<Map<String, dynamic>>> getProducts({
+    String? query,
+    int? categoryId,
+    bool? isFavorite,
+    int? minRating,
+    double? minPrice,
+    double? maxPrice,
+  }) async {
     final db = await database;
+    
+    List<String> whereClauses = [];
+    List<dynamic> whereArgs = [];
+    
     if (query != null && query.isNotEmpty) {
-      return await db.query('Product',
-          where: 'productName LIKE ?', whereArgs: ['%$query%']);
+      whereClauses.add('productName LIKE ?');
+      whereArgs.add('%$query%');
     }
-    return await db.query('Product');
+    
+    if (categoryId != null) {
+      whereClauses.add('categoryId = ?');
+      whereArgs.add(categoryId);
+    }
+    
+    if (isFavorite != null) {
+      whereClauses.add('isFavorite = ?');
+      whereArgs.add(isFavorite ? 1 : 0);
+    }
+
+    if (minRating != null) {
+      whereClauses.add('(SELECT AVG(rating) FROM Review WHERE Review.productId = Product.id) >= ?');
+      whereArgs.add(minRating);
+    }
+
+    if (minPrice != null) {
+      whereClauses.add('price >= ?');
+      whereArgs.add(minPrice);
+    }
+
+    if (maxPrice != null) {
+      whereClauses.add('price <= ?');
+      whereArgs.add(maxPrice);
+    }
+    
+    String? whereString = whereClauses.isNotEmpty ? whereClauses.join(' AND ') : null;
+    
+    return await db.query('Product', where: whereString, whereArgs: whereArgs);
   }
 
   Future<int> updateProduct(int id, Map<String, dynamic> product) async {
@@ -96,7 +150,7 @@ class DatabaseHelper {
     return await db.delete('Product', where: 'id = ?', whereArgs: [id]);
   }
 
-  // CRUD operations for Review
+  // CRUD 操作 - Review
   Future<int> insertReview(Map<String, dynamic> review) async {
     final db = await database;
     return await db.insert('Review', review);
@@ -107,7 +161,7 @@ class DatabaseHelper {
     return await db.query('Review', where: 'productId = ?', whereArgs: [productId]);
   }
 
-  // Favorites functionality
+  // 收藏功能
   Future<int> toggleFavorite(int productId, bool isFavorite) async {
     final db = await database;
     return await db.update('Product', {'isFavorite': isFavorite ? 1 : 0},
@@ -117,22 +171,5 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getFavoriteProducts() async {
     final db = await database;
     return await db.query('Product', where: 'isFavorite = ?', whereArgs: [1]);
-  }
-
-  Future<void> _insertDummyData(Database db) async {
-    // Insert categories
-    int electronicsId = await db.insert('Category', {'categoryName': 'Electronics'});
-    int clothingId = await db.insert('Category', {'categoryName': 'Clothing'});
-
-    // Insert products
-    await db.insert('Product', {'productName': 'Laptop', 'categoryId': electronicsId, 'isFavorite': 1});
-    await db.insert('Product', {'productName': 'Smartphone', 'categoryId': electronicsId});
-    await db.insert('Product', {'productName': 'T-Shirt', 'categoryId': clothingId});
-    await db.insert('Product', {'productName': 'Jeans', 'categoryId': clothingId, 'isFavorite': 1});
-
-    // Insert reviews for products
-    await db.insert('Review', {'productId': 1, 'reviewText': 'Great performance!', 'rating': 5});
-    await db.insert('Review', {'productId': 1, 'reviewText': 'Good value for the price', 'rating': 4});
-    await db.insert('Review', {'productId': 2, 'reviewText': 'Battery life could be better', 'rating': 3});
   }
 }
