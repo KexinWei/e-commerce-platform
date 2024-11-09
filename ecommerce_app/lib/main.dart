@@ -77,6 +77,133 @@ class _ProductListScreenState extends State<ProductListScreen> {
   String searchQuery = ""; // 搜索关键字变量
   bool showFavoritesOnly = false; // 筛选最爱产品的开关变量
 
+  void _showProductDialog(BuildContext context, {Map<String, dynamic>? product}) {
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController priceController = TextEditingController();
+
+  if (product != null) {
+    nameController.text = product['productName'];
+    priceController.text = product['price'].toString();
+  }
+
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text(product == null ? 'Add Product' : 'Edit Product'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: InputDecoration(labelText: 'Product Name'),
+            ),
+            TextField(
+              controller: priceController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: 'Price'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+
+              double? price = double.tryParse(priceController.text);
+              if (price == null || price <= 0) {
+                _showErrorDialog(context, 'Price must be a valid positive number.');
+                return;
+              }
+
+              if (nameController.text.isEmpty || priceController.text.isEmpty) {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Text('Error'),
+                    content: Text('Product Name and Price are required fields.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text('OK'),
+                      ),
+                    ],
+                  ),
+                );
+                return;
+              }
+              
+              final newProduct = {
+                'productName': nameController.text,
+                'price': double.parse(priceController.text),
+                'categoryId': widget.categoryId,
+              };
+              Navigator.pop(context);
+
+              if (product == null) {
+                await dbHelper.insertProduct(newProduct);
+                _showConfirmationDialog(context, 'Product Added',
+                    '${newProduct['productName']} has been added successfully.');
+              } else {
+                // Update existing product
+                await dbHelper.updateProduct(product['id'], newProduct);
+                _showConfirmationDialog(context, 'Product Updated Successfully',
+                    'Updated Name: ${newProduct['productName']}\n'
+                    'Updated Price: \$${newProduct['price']}');
+              }
+
+              setState(() {}); // Refresh the list of products
+            },
+            child: Text('Save'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+void _showConfirmationDialog(BuildContext context, String title, String content) {
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); 
+              setState(() {});
+            },
+            child: Text('OK'),
+          ),
+        ],
+      );
+    },
+  );
+}
+void _showErrorDialog(BuildContext context, String message) {
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: Text('OK'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -142,20 +269,63 @@ class _ProductListScreenState extends State<ProductListScreen> {
                   itemBuilder: (context, index) {
                     return ListTile(
                       title: Text(products[index]['productName']),
-                      trailing: IconButton(
-                        icon: Icon(
-                          products[index]['isFavorite'] == 1
-                              ? Icons.favorite
-                              : Icons.favorite_border,
-                          color: products[index]['isFavorite'] == 1
-                              ? Colors.red
-                              : null,
-                        ),
-                        onPressed: () {
-                          dbHelper.toggleFavorite(
-                              products[index]['id'], products[index]['isFavorite'] == 0);
-                          setState(() {}); // 刷新页面以更新图标
-                        },
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.edit),
+                            onPressed: () {
+                              _showProductDialog(context, product: products[index]);
+                            },
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.delete),
+                            onPressed: () async {
+                              bool? confirmDelete = await showDialog(
+                                context: context,
+                                builder: (BuildContext context) {
+                                  return AlertDialog(
+                                    title: Text('Confirm Deletion'),
+                                    content: Text('Are you sure you want to delete ${products[index]['productName']}?'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () {
+                                          Navigator.pop(context, false); // No
+                                        },
+                                        child: Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          Navigator.pop(context, true); // Yes
+                                        },
+                                        child: Text('Delete'),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+                              if (confirmDelete == true) {
+                                await dbHelper.deleteProduct(products[index]['id']);
+                                setState(() {});
+                              }
+                            },
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              products[index]['isFavorite'] == 1
+                                  ? Icons.favorite
+                                  : Icons.favorite_border,
+                              color: products[index]['isFavorite'] == 1
+                                  ? Colors.red
+                                  : null,
+                            ),
+                            onPressed: () {
+                              dbHelper.toggleFavorite(
+                                  products[index]['id'], products[index]['isFavorite'] == 0);
+                              setState(() {}); // 刷新页面以更新图标
+                            },
+                          ),
+                        ],
                       ),
                       onTap: () {
                         Navigator.push(
@@ -176,6 +346,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton(
+      onPressed: () {
+        _showProductDialog(context);
+      },
+      child: Icon(Icons.add),
+    ),
+
     );
   }
 }
