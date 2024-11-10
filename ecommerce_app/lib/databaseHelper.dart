@@ -172,4 +172,32 @@ class DatabaseHelper {
     final db = await database;
     return await db.query('Product', where: 'isFavorite = ?', whereArgs: [1]);
   }
+
+  // Filter Feature
+  Future<List<Map<String, dynamic>>> getProductsByCategory(String categoryName) async {
+    final db = await database;
+
+    // get category object
+    final categoryResult = await db.query(
+      'Category',
+      columns: ['id'],
+      where: 'categoryName = ?',
+      whereArgs: [categoryName],
+    );
+
+    // empty list 
+    if (categoryResult.isEmpty) {
+      return [];
+    }
+
+    // get categoryId
+    int categoryId = categoryResult.first['id'] as int;
+
+    // query products containing categoryId
+    return await db.query(
+      'Product',
+      where: 'categoryId = ?',
+      whereArgs: [categoryId],
+    );
+  }
 }
